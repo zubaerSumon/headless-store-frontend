@@ -1,65 +1,146 @@
-import Image from "next/image";
+// app/page.js
+import { gql } from '@apollo/client';
+import { fetchAPI } from '../lib/apollo';
 
-export default function Home() {
+// Product type definition
+interface Product {
+  databaseId: number;
+  name: string;
+  slug: string;
+  description: string;
+  price: string;
+  image: {
+    sourceUrl: string;
+    altText: string | null;
+  } | null;
+}
+
+// GraphQL response type
+interface GetProductsResponse {
+  products: {
+    nodes: Product[];
+  };
+}
+
+// Define the GraphQL query to fetch product details
+const GET_PRODUCTS_QUERY = gql`
+  query GetProducts {
+    products(first: 100) {
+      nodes {
+        databaseId
+        name
+        slug
+        description
+        image {
+          sourceUrl
+          altText
+        }
+        ... on SimpleProduct {
+          price(format: RAW)
+        }
+        ... on VariableProduct {
+          price(format: RAW)
+        }
+        ... on ExternalProduct {
+          price(format: RAW)
+        }
+        ... on GroupProduct {
+          price(format: RAW)
+        }
+      }
+    }
+  }
+`;
+
+/**
+ * Home page component (Server Component in Next.js App Router)
+ */
+export default async function Home() {
+  let data: GetProductsResponse | null = null;
+  let error: string | null = null;
+
+  try {
+    // Fetch data from the local WordPress GraphQL API
+    const response = await fetchAPI(GET_PRODUCTS_QUERY);
+    console.log("Full GraphQL Response:", response);
+    console.log("Response type:", typeof response);
+    console.log("Response keys:", response ? Object.keys(response) : 'null/undefined');
+    
+    if (response) {
+      data = response as GetProductsResponse;
+    } else {
+      error = "GraphQL query returned undefined. Check server console for errors.";
+    }
+  } catch (e: any) {
+    const errorMessage = e?.message || e?.graphQLErrors?.[0]?.message || 'Unknown error';
+    error = errorMessage;
+    console.error("Fetching Error:", e);
+    if (e?.graphQLErrors) {
+      console.error("GraphQL Errors:", e.graphQLErrors);
+    }
+    if (e?.networkError) {
+      console.error("Network Error:", e.networkError);
+    }
+  }
+
+  const products: Product[] = data?.products?.nodes || [];
+  console.log("Extracted products:", products.length, products);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main style={{ padding: '20px', fontFamily: 'sans-serif' }}>
+      <h1>🛒 Headless WooCommerce Store</h1>
+      <p>API Endpoint: {process.env.NEXT_PUBLIC_WORDPRESS_API_URL}</p>
+      <hr />
+
+      {error && <p style={{ color: 'red' }}>Error: {error}</p>}
+
+      {data && (
+        <details style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Debug: Raw GraphQL Response</summary>
+          <pre style={{ marginTop: '10px', overflow: 'auto', fontSize: '0.8em' }}>
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      <h2>Products from GraphQL ({products.length})</h2>
+
+      {products.length === 0 ? (
+        <p>No published products found in WooCommerce. Check WordPress admin.</p>
+      ) : (
+        <ul style={{ listStyleType: 'none', padding: '0' }}>
+          {products.map((product) => (
+            <li key={product.databaseId} style={{ border: '1px solid #ddd', borderRadius: '8px', padding: '20px', marginBottom: '20px', backgroundColor: '#fff' }}>
+              <h3 style={{ marginTop: '0', marginBottom: '10px' }}>{product.name}</h3>
+              
+              {product.price && (
+                <p style={{ fontWeight: 'bold', color: '#059669', fontSize: '1.2em', marginBottom: '10px' }}>
+                  ${product.price}
+                </p>
+              )}
+
+              {product.image && (
+                <img 
+                  src={product.image.sourceUrl} 
+                  alt={product.image.altText || product.name}
+                  style={{ maxWidth: '300px', height: 'auto', borderRadius: '4px', marginBottom: '15px' }}
+                />
+              )}
+
+              {product.description && (
+                <div 
+                  dangerouslySetInnerHTML={{ __html: product.description }}
+                  style={{ marginBottom: '15px', color: '#555', lineHeight: '1.6' }}
+                />
+              )}
+
+              <p style={{ fontSize: '0.9em', color: '#888', marginBottom: '5px' }}>
+                <strong>ID:</strong> {product.databaseId} | <strong>Slug:</strong> {product.slug}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
   );
 }
